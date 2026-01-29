@@ -131,10 +131,21 @@ if args['classification_num'] == 0 and args['regression_num'] != 0:
 print('Classification task:{}, Regression Task:{}'.format(args['classification_num'], args['regression_num']))
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
 data_dir = os.path.join(project_root, 'data')
+csv_path = os.path.join(data_dir, args['data_name'] + '.csv')
 args['bin_path'] = os.path.join(data_dir, args['data_name'] + '.bin')
 args['group_path'] = os.path.join(data_dir, args['data_name'] + '_group.csv')
 logger.info("Using data bin: %s", args['bin_path'])
 logger.info("Using group csv: %s", args['group_path'])
+if not (os.path.exists(args['bin_path']) and os.path.exists(args['group_path'])):
+    logger.info("Dataset artifacts missing, building from: %s", csv_path)
+    if not os.path.exists(csv_path):
+        raise FileNotFoundError("Missing source CSV: {}".format(csv_path))
+    build_dataset.built_data_and_save_for_splited(
+        origin_path=csv_path,
+        save_path=args['bin_path'],
+        group_path=args['group_path'],
+        task_list_selected=None
+    )
 
 
 result_pd = pd.DataFrame(columns=args['select_task_list']+['group'] + args['select_task_list']+['group']
