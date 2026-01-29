@@ -8,12 +8,57 @@ from utils.MY_GNN import collate_molgraphs, EarlyStopping, run_a_train_epoch_het
 import os
 import time
 import logging
-import resource
+import sys
+import ctypes
+from ctypes import wintypes
+try:
+    import resource
+except ImportError:
+    resource = None
 import pandas as pd
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 start = time.time()
+
+
+def _get_peak_working_set_gb():
+    class PROCESS_MEMORY_COUNTERS(ctypes.Structure):
+        _fields_ = [
+            ("cb", wintypes.DWORD),
+            ("PageFaultCount", wintypes.DWORD),
+            ("PeakWorkingSetSize", ctypes.c_size_t),
+            ("WorkingSetSize", ctypes.c_size_t),
+            ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+            ("QuotaPagedPoolUsage", ctypes.c_size_t),
+            ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+            ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+            ("PagefileUsage", ctypes.c_size_t),
+            ("PeakPagefileUsage", ctypes.c_size_t),
+        ]
+
+    counters = PROCESS_MEMORY_COUNTERS()
+    counters.cb = ctypes.sizeof(PROCESS_MEMORY_COUNTERS)
+    get_process_memory_info = ctypes.windll.psapi.GetProcessMemoryInfo
+    get_current_process = ctypes.windll.kernel32.GetCurrentProcess
+    if not get_process_memory_info(get_current_process(), ctypes.byref(counters), counters.cb):
+        return None
+    return counters.PeakWorkingSetSize / (1024 ** 3)
+
+
+def get_peak_memory_gb(device):
+    if device == "cuda":
+        return torch.cuda.max_memory_allocated() / (1024 ** 3)
+    if resource is not None:
+        peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        if sys.platform == "darwin":
+            peak_bytes = peak
+        else:
+            peak_bytes = peak * 1024
+        return peak_bytes / (1024 ** 3)
+    if os.name == "nt":
+        return _get_peak_working_set_gb()
+    return None
 
 
 # fix parameters of model
@@ -162,13 +207,13 @@ for time_id in range(args['times']):
     print("val_result:", val_score)
     print("test_result:", test_score)
     avg_epoch_time = sum(epoch_times) / len(epoch_times) if epoch_times else 0.0
-    if args['device'] == "cuda":
-        peak_memory_gb = torch.cuda.max_memory_allocated() / (1024 ** 3)
-    else:
-        peak_memory_gb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / (1024 ** 2)
+    peak_memory_gb = get_peak_memory_gb(args['device'])
     logger.info("===== Computational Cost Metrics =====")
     logger.info("Avg Time/epoch (s): %.2f", avg_epoch_time)
-    logger.info("Peak Memory (GB): %.2f", peak_memory_gb)
+    if peak_memory_gb is None:
+        logger.info("Peak Memory (GB): N/A")
+    else:
+        logger.info("Peak Memory (GB): %.2f", peak_memory_gb)
     logger.info("Total Params (M): %.2f", total_params_m)
     logger.info("======================================")
 
