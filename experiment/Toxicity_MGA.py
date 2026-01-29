@@ -1,3 +1,10 @@
+import os
+import sys
+
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 import numpy as np
 from utils import build_dataset
 import torch
@@ -5,10 +12,8 @@ from torch.optim import Adam
 from torch.utils.data import DataLoader
 from utils.MY_GNN import collate_molgraphs, EarlyStopping, run_a_train_epoch_heterogeneous, \
     run_an_eval_epoch_heterogeneous, set_random_seed, MGA, pos_weight
-import os
 import time
 import logging
-import sys
 import ctypes
 from ctypes import wintypes
 try:
@@ -129,14 +134,16 @@ if args['classification_num'] != 0 and args['regression_num'] == 0:
 if args['classification_num'] == 0 and args['regression_num'] != 0:
     args['task_class'] = 'regression'
 print('Classification task:{}, Regression Task:{}'.format(args['classification_num'], args['regression_num']))
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
 data_dir = os.path.join(project_root, 'data')
 csv_path = os.path.join(data_dir, args['data_name'] + '.csv')
 args['bin_path'] = os.path.join(data_dir, args['data_name'] + '.bin')
 args['group_path'] = os.path.join(data_dir, args['data_name'] + '_group.csv')
 logger.info("Using data bin: %s", args['bin_path'])
 logger.info("Using group csv: %s", args['group_path'])
+logger.info("Bin exists: %s, group exists: %s",
+            os.path.exists(args['bin_path']), os.path.exists(args['group_path']))
 if not (os.path.exists(args['bin_path']) and os.path.exists(args['group_path'])):
+    os.makedirs(data_dir, exist_ok=True)
     logger.info("Dataset artifacts missing, building from: %s", csv_path)
     if not os.path.exists(csv_path):
         raise FileNotFoundError("Missing source CSV: {}".format(csv_path))
@@ -146,6 +153,12 @@ if not (os.path.exists(args['bin_path']) and os.path.exists(args['group_path']))
         group_path=args['group_path'],
         task_list_selected=None
     )
+    if not (os.path.exists(args['bin_path']) and os.path.exists(args['group_path'])):
+        raise FileNotFoundError(
+            "Build finished but artifacts still missing: {}, {}".format(
+                args['bin_path'], args['group_path']
+            )
+        )
 
 
 result_pd = pd.DataFrame(columns=args['select_task_list']+['group'] + args['select_task_list']+['group']
