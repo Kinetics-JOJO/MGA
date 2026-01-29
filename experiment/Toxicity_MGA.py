@@ -129,8 +129,12 @@ if args['classification_num'] != 0 and args['regression_num'] == 0:
 if args['classification_num'] == 0 and args['regression_num'] != 0:
     args['task_class'] = 'regression'
 print('Classification task:{}, Regression Task:{}'.format(args['classification_num'], args['regression_num']))
-args['bin_path'] = '../data/' + args['data_name'] + '.bin'
-args['group_path'] = '../data/' + args['data_name'] + '_group.csv'
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+data_dir = os.path.join(project_root, 'data')
+args['bin_path'] = os.path.join(data_dir, args['data_name'] + '.bin')
+args['group_path'] = os.path.join(data_dir, args['data_name'] + '_group.csv')
+logger.info("Using data bin: %s", args['bin_path'])
+logger.info("Using group csv: %s", args['group_path'])
 
 
 result_pd = pd.DataFrame(columns=args['select_task_list']+['group'] + args['select_task_list']+['group']
