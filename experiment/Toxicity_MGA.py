@@ -7,7 +7,12 @@ from utils.MY_GNN import collate_molgraphs, EarlyStopping, run_a_train_epoch_het
     run_an_eval_epoch_heterogeneous, set_random_seed, MGA, pos_weight
 import os
 import time
+import logging
+import resource
 import pandas as pd
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
 start = time.time()
 
 
@@ -28,7 +33,7 @@ args['rgcn_hidden_feats'] = [64, 64]
 args['classifier_hidden_feats'] = 64
 args['rgcn_drop_out'] = 0.2
 args['drop_out'] = 0.2
-args['lr'] = 3
+args['lr'] = 1e-3
 args['weight_decay'] = 5
 args['loop'] = True
 
@@ -122,11 +127,16 @@ for time_id in range(args['times']):
                 n_tasks=task_number, rgcn_drop_out=args['rgcn_drop_out'],
                 classifier_hidden_feats=args['classifier_hidden_feats'], dropout=args['drop_out'],
                 loop=args['loop'])
-    optimizer = Adam(model.parameters(), lr=10**-args['lr'], weight_decay=10**-args['weight_decay'])
+    optimizer = Adam(model.parameters(), lr=args['lr'], weight_decay=10**-args['weight_decay'])
     stopper = EarlyStopping(patience=args['patience'], task_name=args['task_name'], mode=args['mode'])
     model.to(args['device'])
+    total_params_m = sum(param.numel() for param in model.parameters()) / 1e6
+    epoch_times = []
+    if args['device'] == "cuda":
+        torch.cuda.reset_peak_memory_stats()
 
     for epoch in range(args['num_epochs']):
+        epoch_start = time.perf_counter()
         # Train
         run_a_train_epoch_heterogeneous(args, epoch, model, train_loader, loss_criterion_c, loss_criterion_r, optimizer)
 
@@ -137,6 +147,7 @@ for time_id in range(args['times']):
         print('epoch {:d}/{:d}, validation {:.4f}, best validation {:.4f}'.format(
             epoch + 1, args['num_epochs'],
             val_score,  stopper.best_score)+' validation result:', validation_result)
+        epoch_times.append(time.perf_counter() - epoch_start)
         if early_stop:
             break
     stopper.load_checkpoint(model)
@@ -150,6 +161,16 @@ for time_id in range(args['times']):
     print("training_result:", train_score)
     print("val_result:", val_score)
     print("test_result:", test_score)
+    avg_epoch_time = sum(epoch_times) / len(epoch_times) if epoch_times else 0.0
+    if args['device'] == "cuda":
+        peak_memory_gb = torch.cuda.max_memory_allocated() / (1024 ** 3)
+    else:
+        peak_memory_gb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / (1024 ** 2)
+    logger.info("===== Computational Cost Metrics =====")
+    logger.info("Avg Time/epoch (s): %.2f", avg_epoch_time)
+    logger.info("Peak Memory (GB): %.2f", peak_memory_gb)
+    logger.info("Total Params (M): %.2f", total_params_m)
+    logger.info("======================================")
 
 result_pd.to_csv('../result/'+args['task_name']+'_result.csv', index=None)
 elapsed = (time.time() - start)
